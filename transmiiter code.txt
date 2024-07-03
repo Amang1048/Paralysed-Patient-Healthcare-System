@@ -1,0 +1,77 @@
+//Include Libraries
+#include <SPI.h>
+#include <nRF24L01.h>
+#include <RF24.h>
+#include <Adafruit_MPU6050.h>
+
+#include <Wire.h>
+#include <MPU6050.h>
+MPU6050 mpu;
+//create an RF24 object
+RF24 radio(9, 8);  // CE, CSN
+//address through which two modules communicate.
+const byte address[6] = "00001";
+void setup() {
+  Serial.begin(9600);
+
+  Wire.begin();
+  mpu.initialize();
+  // You can adjust the sensitivity of the accelerometer by changing the following line
+  mpu.setFullScaleAccelRange(MPU6050_ACCEL_FS_2);
+
+
+  radio.begin();
+
+  //set the address
+  radio.openWritingPipe(address);
+
+  //Set module as transmitter
+  radio.stopListening();
+}
+void loop() {
+  int16_t ax, ay, az;
+  mpu.getAcceleration(&ax, &ay, &az);
+
+  // Calculate tilt angles
+  float roll = atan2(ay, az) * 180 / M_PI;
+  float pitch = atan2(-ax, sqrt(ay * ay + az * az)) * 180 / M_PI;
+
+  // Hysteresis thresholds
+  const int threshold = 30;
+  const int hysteresis = 5;
+
+  // Direction logic with hysteresis
+  static char lastDirection[] = "Level";
+  char direction[6];
+  strcpy(direction, "Level"); // Default direction
+
+  if (abs(roll) > threshold + hysteresis || (abs(roll) > threshold - hysteresis && strcmp(lastDirection, "Right") == 0 && roll > 0) || (abs(roll) > threshold - hysteresis && strcmp(lastDirection, "Left") == 0 && roll < 0)) {
+    if (roll > 0) {
+      static char Direction[] = "Right";
+      radio.write(&Direction, sizeof(Direction));
+      strcpy(direction, "Right");
+    } else {
+      static char Direction[] = "Left";
+      radio.write(&Direction, sizeof(Direction));
+      strcpy(direction, "Left");
+    }
+  } else if (abs(pitch) > threshold + hysteresis || (abs(pitch) > threshold - hysteresis && strcmp(lastDirection, "Down") == 0 && pitch > 0) || (abs(pitch) > threshold - hysteresis && strcmp(lastDirection, "Up") == 0 && pitch < 0)) {
+    if (pitch > 0) {
+      static char Direction[] = "Down";
+      radio.write(&Direction, sizeof(Direction));
+      strcpy(direction, "Down");
+    } else {
+      static char Direction[] = "Up";
+      radio.write(&Direction, sizeof(Direction));
+      strcpy(direction, "Up");
+    }
+  }
+  if (strcmp(lastDirection, direction) != 0) {
+    
+    Serial.println(direction);
+    // radio.write(&Direction, sizeof(Direction));
+    strcpy(lastDirection, direction);
+  }
+
+  delay(1000);
+}
